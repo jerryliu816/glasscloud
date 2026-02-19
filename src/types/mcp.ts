@@ -48,3 +48,12 @@ export interface McpToolResult {
   isError: boolean;
   content: string;
 }
+
+export interface McpServiceRegistration {
+  name: string;
+  description: string;
+  endpointUrl: string;
+  authType: 'none' | 'api_key';
+  apiKey?: string;
+  toolsJson: string; // JSON string of McpToolDefinition[]
+}

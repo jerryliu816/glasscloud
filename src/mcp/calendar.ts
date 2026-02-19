@@ -20,14 +20,14 @@ export async function executeCalendarTool(
     case 'get_today':
       return getTodayEvents(calendar);
     case 'get_events':
-      return getEvents(calendar, args.days as number, args.startDate as string | undefined);
+      return getEvents(calendar, args['days'] as number, args['startDate'] as string | undefined);
     case 'create_event':
       return createEvent(
         calendar,
-        args.title as string,
-        args.startTime as string,
-        args.endTime as string | undefined,
-        args.description as string | undefined
+        args['title'] as string,
+        args['startTime'] as string,
+        args['endTime'] as string | undefined,
+        args['description'] as string | undefined
       );
     default:
       throw new Error(`Unknown Calendar tool: ${toolName}`);
@@ -232,7 +232,7 @@ function parseTimeString(timeStr: string): Date {
   // Handle time patterns like "at 3pm", "at 15:00"
   const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
   if (timeMatch) {
-    let hours = parseInt(timeMatch[1], 10);
+    let hours = parseInt(timeMatch[1] ?? '0', 10);
     const minutes = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
     const meridiem = timeMatch[3];
 

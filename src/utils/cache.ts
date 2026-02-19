@@ -10,7 +10,7 @@ export interface CacheOptions {
 /**
  * Create a typed LRU cache
  */
-export function createCache<K extends string | number, V>(
+export function createCache<K extends string | number, V extends {}>(
   options: CacheOptions = {}
 ): LRUCache<K, V> {
   return new LRUCache<K, V>({

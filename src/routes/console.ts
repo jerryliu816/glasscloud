@@ -6,17 +6,21 @@ import { db } from '../db/index.js';
 import { getDevicesForUser } from '../services/device.service.js';
 import { generateLinkToken } from '../services/link.service.js';
 import { getOnlineDeviceIds, getConnectionCount, getActiveDeviceCount } from '../server/websocket.js';
+import {
+  registerService,
+  getServicesForUser as getMcpServicesForUser,
+  deleteService as deleteMcpService,
+  fetchToolsFromEndpoint,
+} from '../services/mcp-registry.service.js';
+import { sessions } from '../server/sessions.js';
 
 export const consoleRouter = Router();
-
-// Simple session storage (in production use proper sessions)
-const sessions = new Map<string, { userId: string; email: string; name: string }>();
 
 /**
  * Main console page
  */
 consoleRouter.get('/', (req: Request, res: Response) => {
-  const sessionId = req.query.session as string;
+  const sessionId = req.query['session'] as string;
   const session = sessionId ? sessions.get(sessionId) : null;
 
   // Get stats
@@ -75,7 +79,7 @@ consoleRouter.get('/', (req: Request, res: Response) => {
   <div class="container">
     <header>
       <h1>GlassCloud Console</h1>
-      <p>MCP Relay Server for GlassBridge</p>
+      <p>MCP Relay Server for GlassBridge${session ? ` &nbsp;|&nbsp; <a href="/console/gallery?session=${sessionId}" style="color: white; opacity: 0.9; text-decoration: none; font-weight: 500;">Image Gallery →</a>` : ''}</p>
     </header>
 
     <div class="card">
@@ -186,10 +190,65 @@ consoleRouter.get('/', (req: Request, res: Response) => {
         </div>
         `).join('')}
       </div>
-      <p style="margin-top: 15px; color: #666; font-size: 14px;">
-        Third-party MCP server registration coming soon.
-      </p>
     </div>
+
+    ${session ? `
+    <div class="card">
+      <h2>Register Third-Party MCP Server</h2>
+      <form id="mcp-register-form" onsubmit="return registerMcpService(event, '${sessionId}')">
+        <div style="display: grid; gap: 12px;">
+          <div>
+            <label style="display: block; font-weight: 500; margin-bottom: 4px;">Server Name</label>
+            <input type="text" name="name" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" placeholder="My MCP Server">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 500; margin-bottom: 4px;">Description</label>
+            <input type="text" name="description" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" placeholder="What this server does">
+          </div>
+          <div>
+            <label style="display: block; font-weight: 500; margin-bottom: 4px;">Endpoint URL</label>
+            <input type="url" name="endpointUrl" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" placeholder="https://my-server.example.com/mcp">
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div>
+              <label style="display: block; font-weight: 500; margin-bottom: 4px;">Auth Type</label>
+              <select name="authType" onchange="document.getElementById('apikey-field').style.display = this.value === 'api_key' ? 'block' : 'none'" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="none">None</option>
+                <option value="api_key">API Key</option>
+              </select>
+            </div>
+            <div id="apikey-field" style="display: none;">
+              <label style="display: block; font-weight: 500; margin-bottom: 4px;">API Key</label>
+              <input type="password" name="apiKey" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" placeholder="Bearer token">
+            </div>
+          </div>
+          <div>
+            <label style="display: block; font-weight: 500; margin-bottom: 4px;">Tools JSON</label>
+            <textarea name="toolsJson" id="tools-json" rows="6" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; font-size: 12px;" placeholder='[{"name":"tool_name","description":"...","inputSchema":{"type":"object","properties":{}}}]'>[]</textarea>
+            <button type="button" class="btn btn-secondary" style="margin-top: 8px; padding: 6px 12px; font-size: 12px;" onclick="fetchTools('${sessionId}')">Fetch from Server</button>
+            <span id="fetch-tools-status" style="margin-left: 8px; font-size: 12px; color: #666;"></span>
+          </div>
+          <div>
+            <button type="submit" class="btn">Register Server</button>
+            <span id="register-status" style="margin-left: 8px; font-size: 14px;"></span>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Your Third-Party MCP Servers</h2>
+      <div id="mcp-services-list">Loading...</div>
+      <div id="mcp-qr-container" style="display: none; text-align: center; padding: 20px; margin-top: 15px; border-top: 1px solid #eee;">
+        <h3 style="margin-bottom: 10px; font-size: 16px;">Scan with GlassBridge</h3>
+        <canvas id="mcp-qr-canvas"></canvas>
+        <div class="qr-data" id="mcp-qr-data" style="margin-top: 10px;"></div>
+      </div>
+      <script>
+        loadMcpServices('${sessionId}');
+      </script>
+    </div>
+    ` : ''}
 
     <div class="card">
       <h2>API Documentation</h2>
@@ -223,6 +282,116 @@ consoleRouter.get('/', (req: Request, res: Response) => {
       await fetch('/console/api/devices/' + deviceId + '?session=' + sessionId, { method: 'DELETE' });
       location.reload();
     }
+
+    async function registerMcpService(e, sessionId) {
+      e.preventDefault();
+      const form = document.getElementById('mcp-register-form');
+      const status = document.getElementById('register-status');
+      const fd = new FormData(form);
+      const body = {
+        name: fd.get('name'),
+        description: fd.get('description'),
+        endpointUrl: fd.get('endpointUrl'),
+        authType: fd.get('authType'),
+        apiKey: fd.get('apiKey') || undefined,
+        toolsJson: fd.get('toolsJson'),
+      };
+      status.textContent = 'Registering...';
+      try {
+        const res = await fetch('/console/api/mcp/register?session=' + sessionId, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) { status.textContent = 'Error: ' + (data.error || 'Failed'); return false; }
+        status.textContent = 'Registered!';
+        form.reset();
+        document.getElementById('tools-json').value = '[]';
+        document.getElementById('apikey-field').style.display = 'none';
+        loadMcpServices(sessionId);
+      } catch (err) {
+        status.textContent = 'Error: ' + err.message;
+      }
+      return false;
+    }
+
+    async function fetchTools(sessionId) {
+      const form = document.getElementById('mcp-register-form');
+      const fd = new FormData(form);
+      const endpointUrl = fd.get('endpointUrl');
+      const authType = fd.get('authType');
+      const apiKey = fd.get('apiKey');
+      const status = document.getElementById('fetch-tools-status');
+      if (!endpointUrl) { status.textContent = 'Enter an endpoint URL first'; return; }
+      status.textContent = 'Fetching...';
+      try {
+        const res = await fetch('/console/api/mcp/fetch-tools?session=' + sessionId, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpointUrl, authType, apiKey }),
+        });
+        const data = await res.json();
+        if (!res.ok) { status.textContent = 'Error: ' + (data.error || 'Failed'); return; }
+        document.getElementById('tools-json').value = JSON.stringify(data.tools, null, 2);
+        status.textContent = data.tools.length + ' tools found';
+      } catch (err) {
+        status.textContent = 'Error: ' + err.message;
+      }
+    }
+
+    async function loadMcpServices(sessionId) {
+      const list = document.getElementById('mcp-services-list');
+      if (!list) return;
+      try {
+        const res = await fetch('/console/api/mcp/services?session=' + sessionId);
+        const data = await res.json();
+        if (data.services.length === 0) {
+          list.innerHTML = '<p style="color: #666;">No third-party servers registered yet.</p>';
+          return;
+        }
+        list.innerHTML = data.services.map(function(s) {
+          var toolCount = 0;
+          try { toolCount = JSON.parse(s.toolsJson).length; } catch(e) {}
+          return '<div class="service-item" style="flex-wrap: wrap;">' +
+            '<div style="flex: 1; min-width: 200px;">' +
+              '<div class="service-name">' + escapeHtml(s.name) + '</div>' +
+              '<div class="service-desc">' + escapeHtml(s.description) + ' - ' + escapeHtml(s.endpointUrl) + ' - ' + toolCount + ' tools</div>' +
+            '</div>' +
+            '<div style="display: flex; gap: 8px;">' +
+              '<span class="badge badge-green">' + s.authType + '</span>' +
+              '<button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="generateMcpQR(\\'' + s.id + '\\', \\'' + sessionId + '\\')">Generate QR</button>' +
+              '<button class="btn btn-secondary" style="padding: 5px 10px; font-size: 12px;" onclick="deleteMcpService(\\'' + s.id + '\\', \\'' + sessionId + '\\')">Delete</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      } catch (err) {
+        list.innerHTML = '<p style="color: #c00;">Failed to load services</p>';
+      }
+    }
+
+    function escapeHtml(str) {
+      var div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function generateMcpQR(serviceId, sessionId) {
+      var baseUrl = window.location.protocol + '//' + window.location.host;
+      var configUrl = baseUrl + '/api/mcp/services/' + serviceId + '/config';
+      var deepLink = 'glassbridge://mcp-server?url=' + encodeURIComponent(configUrl);
+      var container = document.getElementById('mcp-qr-container');
+      container.style.display = 'block';
+      document.getElementById('mcp-qr-data').textContent = deepLink;
+      QRCode.toCanvas(document.getElementById('mcp-qr-canvas'), deepLink, { width: 256 });
+    }
+
+    async function deleteMcpService(serviceId, sessionId) {
+      if (!confirm('Delete this MCP server?')) return;
+      await fetch('/console/api/mcp/' + serviceId + '?session=' + sessionId, { method: 'DELETE' });
+      document.getElementById('mcp-qr-container').style.display = 'none';
+      loadMcpServices(sessionId);
+    }
   </script>
 </body>
 </html>
@@ -234,7 +403,8 @@ consoleRouter.get('/', (req: Request, res: Response) => {
  */
 consoleRouter.get('/dev-login', (_req: Request, res: Response) => {
   if (env.NODE_ENV === 'production') {
-    return res.status(403).send('Dev login disabled in production');
+    res.status(403).send('Dev login disabled in production');
+    return;
   }
 
   // Create or get dev user
@@ -277,7 +447,7 @@ consoleRouter.get('/auth/google', (_req: Request, res: Response) => {
  * Logout
  */
 consoleRouter.get('/logout', (req: Request, res: Response) => {
-  const sessionId = req.query.session as string;
+  const sessionId = req.query['session'] as string;
   if (sessionId) {
     sessions.delete(sessionId);
   }
@@ -288,11 +458,12 @@ consoleRouter.get('/logout', (req: Request, res: Response) => {
  * API: Get devices
  */
 consoleRouter.get('/api/devices', (req: Request, res: Response) => {
-  const sessionId = req.query.session as string;
+  const sessionId = req.query['session'] as string;
   const session = sessions.get(sessionId);
 
   if (!session) {
-    return res.status(401).json({ error: 'Not authenticated' });
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
   }
 
   const devices = getDevicesForUser(session.userId, getOnlineDeviceIds());
@@ -303,11 +474,12 @@ consoleRouter.get('/api/devices', (req: Request, res: Response) => {
  * API: Generate link token
  */
 consoleRouter.post('/api/link/generate', (req: Request, res: Response) => {
-  const sessionId = req.query.session as string;
+  const sessionId = req.query['session'] as string;
   const session = sessions.get(sessionId);
 
   if (!session) {
-    return res.status(401).json({ error: 'Not authenticated' });
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
   }
 
   const baseUrl = `${req.protocol}://${req.get('host')}`;
@@ -324,15 +496,128 @@ consoleRouter.post('/api/link/generate', (req: Request, res: Response) => {
  * API: Unlink device
  */
 consoleRouter.delete('/api/devices/:deviceId', (req: Request, res: Response) => {
-  const sessionId = req.query.session as string;
+  const sessionId = req.query['session'] as string;
   const session = sessions.get(sessionId);
 
   if (!session) {
-    return res.status(401).json({ error: 'Not authenticated' });
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
   }
 
   const { deleteDevice } = require('../services/device.service.js');
-  const success = deleteDevice(req.params.deviceId, session.userId);
+  const success = deleteDevice(req.params['deviceId'] ?? '', session.userId);
 
   res.json({ success });
+});
+
+/**
+ * API: Register a third-party MCP service
+ */
+consoleRouter.post('/api/mcp/register', (req: Request, res: Response) => {
+  const sessionId = req.query['session'] as string;
+  const session = sessions.get(sessionId);
+
+  if (!session) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+
+  const { name, description, endpointUrl, authType, apiKey, toolsJson } = req.body;
+
+  if (!name || !description || !endpointUrl || !authType || !toolsJson) {
+    res.status(400).json({ error: 'Missing required fields' });
+    return;
+  }
+
+  // Validate toolsJson
+  try {
+    JSON.parse(toolsJson);
+  } catch {
+    res.status(400).json({ error: 'Invalid tools JSON' });
+    return;
+  }
+
+  try {
+    const serviceId = registerService(session.userId, {
+      name,
+      description,
+      endpointUrl,
+      authType,
+      apiKey,
+      toolsJson,
+    });
+    res.json({ success: true, serviceId });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Registration failed';
+    res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * API: List user's third-party MCP services
+ */
+consoleRouter.get('/api/mcp/services', (req: Request, res: Response) => {
+  const sessionId = req.query['session'] as string;
+  const session = sessions.get(sessionId);
+
+  if (!session) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+
+  const services = getMcpServicesForUser(session.userId).map((s) => ({
+    id: s.id,
+    name: s.name,
+    description: s.description,
+    endpointUrl: s.endpoint_url,
+    authType: s.auth_type,
+    toolsJson: s.tools_json,
+    createdAt: s.created_at,
+  }));
+
+  res.json({ services });
+});
+
+/**
+ * API: Delete a third-party MCP service
+ */
+consoleRouter.delete('/api/mcp/:serviceId', (req: Request, res: Response) => {
+  const sessionId = req.query['session'] as string;
+  const session = sessions.get(sessionId);
+
+  if (!session) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+
+  const success = deleteMcpService(req.params['serviceId'] ?? '', session.userId);
+  res.json({ success });
+});
+
+/**
+ * API: Fetch tools from a third-party MCP endpoint
+ */
+consoleRouter.post('/api/mcp/fetch-tools', async (req: Request, res: Response) => {
+  const sessionId = req.query['session'] as string;
+  const session = sessions.get(sessionId);
+
+  if (!session) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+
+  const { endpointUrl, authType, apiKey } = req.body;
+
+  if (!endpointUrl) {
+    res.status(400).json({ error: 'Endpoint URL is required' });
+    return;
+  }
+
+  try {
+    const tools = await fetchToolsFromEndpoint(endpointUrl, authType || 'none', apiKey);
+    res.json({ tools });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch tools';
+    res.status(502).json({ error: message });
+  }
 });

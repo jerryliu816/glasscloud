@@ -62,7 +62,7 @@ devicesRouter.get('/', authenticate, (req: AuthRequest, res: Response) => {
  */
 devicesRouter.delete('/:deviceId', authenticate, (req: AuthRequest, res: Response) => {
   const userId = req.userId!;
-  const { deviceId } = req.params;
+  const deviceId = req.params['deviceId'] ?? '';
 
   const success = deleteDevice(deviceId, userId);
 

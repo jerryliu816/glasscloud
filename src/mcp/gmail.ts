@@ -20,11 +20,11 @@ export async function executeGmailTool(
 
   switch (action) {
     case 'get_unread':
-      return getUnreadEmails(gmail, args.maxResults as number);
+      return getUnreadEmails(gmail, args['maxResults'] as number);
     case 'search':
-      return searchEmails(gmail, args.query as string, args.maxResults as number);
+      return searchEmails(gmail, args['query'] as string, args['maxResults'] as number);
     case 'get_message':
-      return getMessage(gmail, args.messageId as string);
+      return getMessage(gmail, args['messageId'] as string);
     default:
       throw new Error(`Unknown Gmail tool: ${toolName}`);
   }

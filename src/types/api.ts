@@ -49,3 +49,39 @@ export interface McpServiceResponse {
 export interface McpServicesListResponse {
   services: McpServiceResponse[];
 }
+
+export interface McpServiceConfigResponse {
+  id: string;
+  name: string;
+  description: string;
+  endpointUrl: string;
+  authType: 'none' | 'api_key';
+  tools: import('./mcp.js').McpToolDefinition[];
+}
+
+export interface ImageUploadResponse {
+  imageId: string;
+  originalFilename: string;
+  thumbnailFilename: string;
+  receivedAt: number;
+  capturedAt: number | null;
+}
+
+export interface ImageMetadataResponse {
+  id: string;
+  deviceModel: string;
+  deviceInstanceId: string;
+  sceneDescription: string;
+  originalFilename: string;
+  thumbnailFilename: string;
+  capturedAt: number | null;
+  receivedAt: number;
+  createdAt: number;
+}
+
+export interface GalleryListResponse {
+  images: ImageMetadataResponse[];
+  total: number;
+  page: number;
+  pageSize: number;
+}

@@ -1,6 +1,6 @@
-import type { McpServiceDefinition } from '../types/mcp.js';
+import type { McpToolDefinition, McpServiceDefinition } from '../types/mcp.js';
 
-export const gmailTools = [
+export const gmailTools: McpToolDefinition[] = [
   {
     name: 'gmail.get_unread',
     description: 'Get unread email count and brief summaries',
@@ -50,7 +50,7 @@ export const gmailTools = [
   },
 ];
 
-export const calendarTools = [
+export const calendarTools: McpToolDefinition[] = [
   {
     name: 'calendar.get_today',
     description: "Get today's calendar events",

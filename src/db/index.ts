@@ -11,7 +11,7 @@ if (!fs.existsSync(dbDir)) {
 }
 
 // Create database connection
-export const db = new Database(env.DATABASE_PATH);
+export const db: Database.Database = new Database(env.DATABASE_PATH);
 
 // Enable Write-Ahead Logging for concurrent readers/writers
 db.pragma('journal_mode = WAL');

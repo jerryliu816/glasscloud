@@ -87,6 +87,21 @@ CREATE TABLE IF NOT EXISTS third_party_mcp_services (
     updated_at INTEGER NOT NULL,
     FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- Glass images table
+CREATE TABLE IF NOT EXISTS glass_images (
+    id TEXT PRIMARY KEY,
+    device_model TEXT NOT NULL,
+    device_instance_id TEXT NOT NULL,
+    scene_description TEXT NOT NULL,
+    original_filename TEXT NOT NULL,
+    thumbnail_filename TEXT NOT NULL,
+    captured_at INTEGER,
+    received_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_glass_images_received_at ON glass_images(received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_glass_images_device_instance ON glass_images(device_instance_id);
 `;
 
 export function initializeSchema(): void {
