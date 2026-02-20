@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/index.js';
-import { env, GOOGLE_SCOPES } from '../config/index.js';
+import { env, GOOGLE_SCOPES, GOOGLE_LOGIN_SCOPES, GOOGLE_MCP_SCOPES } from '../config/index.js';
 import { encrypt, decrypt } from '../utils/crypto.js';
 import { logger } from '../utils/logger.js';
 
@@ -35,12 +35,13 @@ const oauth2Client = new google.auth.OAuth2(
 /**
  * Generate Google OAuth authorization URL
  */
-export function getAuthorizationUrl(state: string): string {
+export function getAuthorizationUrl(state: string, scopes?: string[]): string {
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
-    scope: GOOGLE_SCOPES,
+    scope: scopes ?? GOOGLE_LOGIN_SCOPES,
     state,
     prompt: 'consent', // Force consent to get refresh token
+    include_granted_scopes: true, // Preserve previously granted scopes
   });
 }
 
