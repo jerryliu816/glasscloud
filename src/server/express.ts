@@ -20,8 +20,19 @@ export function createExpressApp(): Express {
   // Trust proxy (for rate limiting behind reverse proxy)
   app.set('trust proxy', 1);
 
-  // Security headers
-  app.use(helmet());
+  // Security headers — relax CSP for console pages (inline scripts + QRCode CDN)
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", "data:", "blob:"],
+        },
+      },
+    })
+  );
 
   // CORS
   const corsOrigins = env.CORS_ORIGINS.split(',').map((o) => o.trim());
