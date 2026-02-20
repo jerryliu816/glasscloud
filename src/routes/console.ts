@@ -269,13 +269,34 @@ consoleRouter.get('/', (req: Request, res: Response) => {
 
   <script>
     async function generateQR(sessionId) {
-      const res = await fetch('/console/api/link/generate?session=' + sessionId, { method: 'POST' });
-      const data = await res.json();
+      try {
+        var btn = event.target;
+        btn.disabled = true;
+        btn.textContent = 'Generating...';
 
-      document.getElementById('qr-display').style.display = 'block';
-      document.getElementById('qr-data').textContent = data.qrCodeData;
+        var res = await fetch('/console/api/link/generate?session=' + sessionId, { method: 'POST' });
+        if (!res.ok) {
+          var err = await res.text();
+          alert('Failed to generate QR: ' + res.status + ' ' + err);
+          return;
+        }
+        var data = await res.json();
 
-      QRCode.toCanvas(document.getElementById('qr-canvas'), data.qrCodeData, { width: 256 });
+        document.getElementById('qr-display').style.display = 'block';
+        document.getElementById('qr-data').textContent = data.qrCodeData;
+
+        if (typeof QRCode !== 'undefined') {
+          QRCode.toCanvas(document.getElementById('qr-canvas'), data.qrCodeData, { width: 256 });
+        } else {
+          document.getElementById('qr-canvas').style.display = 'none';
+        }
+      } catch (e) {
+        alert('Error generating QR: ' + e.message);
+        console.error('generateQR error:', e);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate QR Code';
+      }
     }
 
     async function unlinkDevice(deviceId, sessionId) {
