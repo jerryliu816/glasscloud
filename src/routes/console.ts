@@ -74,7 +74,6 @@ consoleRouter.get('/', (req: Request, res: Response) => {
     .alert-info { background: #e3f2fd; color: #1565c0; }
     .alert-warning { background: #fff3e0; color: #e65100; }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -120,14 +119,7 @@ consoleRouter.get('/', (req: Request, res: Response) => {
     <div class="card">
       <h2>Link a Device</h2>
       <p style="margin-bottom: 15px; color: #666;">Scan this QR code with the GlassBridge app to link your device.</p>
-      <div id="qr-container">
-        <button class="btn" onclick="generateQR('${sessionId}')">Generate QR Code</button>
-        <div id="qr-display" style="display: none; margin-top: 20px;">
-          <canvas id="qr-canvas"></canvas>
-          <div class="qr-data" id="qr-data"></div>
-          <p style="margin-top: 10px; color: #666; font-size: 14px;">Expires in 5 minutes</p>
-        </div>
-      </div>
+      <a href="/console/link?session=${sessionId}" class="btn">Generate QR Code</a>
     </div>
 
     <div class="card">
@@ -268,37 +260,6 @@ consoleRouter.get('/', (req: Request, res: Response) => {
   </div>
 
   <script>
-    async function generateQR(sessionId) {
-      try {
-        var btn = event.target;
-        btn.disabled = true;
-        btn.textContent = 'Generating...';
-
-        var res = await fetch('/console/api/link/generate?session=' + sessionId, { method: 'POST' });
-        if (!res.ok) {
-          var err = await res.text();
-          alert('Failed to generate QR: ' + res.status + ' ' + err);
-          return;
-        }
-        var data = await res.json();
-
-        document.getElementById('qr-display').style.display = 'block';
-        document.getElementById('qr-data').textContent = data.qrCodeData;
-
-        if (typeof QRCode !== 'undefined') {
-          QRCode.toCanvas(document.getElementById('qr-canvas'), data.qrCodeData, { width: 256 });
-        } else {
-          document.getElementById('qr-canvas').style.display = 'none';
-        }
-      } catch (e) {
-        alert('Error generating QR: ' + e.message);
-        console.error('generateQR error:', e);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Generate QR Code';
-      }
-    }
-
     async function unlinkDevice(deviceId, sessionId) {
       if (!confirm('Unlink this device?')) return;
       await fetch('/console/api/devices/' + deviceId + '?session=' + sessionId, { method: 'DELETE' });
@@ -449,6 +410,56 @@ consoleRouter.get('/dev-login', (_req: Request, res: Response) => {
   sessions.set(sessionId, { userId: user.id, email: devEmail, name: user.display_name });
 
   res.redirect(`/console?session=${sessionId}`);
+});
+
+/**
+ * Standalone page: generate and display a device-linking QR code
+ */
+consoleRouter.get('/link', async (req: Request, res: Response) => {
+  const sessionId = req.query['session'] as string;
+  const session = sessionId ? sessions.get(sessionId) : null;
+
+  if (!session) {
+    res.redirect('/console');
+    return;
+  }
+
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const linkToken = generateLinkToken(session.userId, baseUrl);
+
+  // Generate QR code server-side as data URL
+  const QRCode = await import('qrcode');
+  const qrDataUrl = await QRCode.toDataURL(linkToken.qrCodeData, { width: 280, margin: 2 });
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Link Device — GlassCloud</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .card { background: white; border-radius: 12px; padding: 40px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); text-align: center; max-width: 420px; width: 100%; }
+    h1 { font-size: 22px; margin-bottom: 8px; color: #333; }
+    p { color: #666; font-size: 14px; margin-bottom: 20px; }
+    .qr-img { margin: 0 auto; }
+    .qr-data { font-family: monospace; font-size: 11px; word-break: break-all; background: #f5f5f5; padding: 10px; border-radius: 4px; margin-top: 16px; color: #555; }
+    .back { display: inline-block; margin-top: 20px; color: #1a73e8; text-decoration: none; font-size: 14px; }
+    .back:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Link Your Device</h1>
+    <p>Scan this QR code with the GlassBridge app</p>
+    <img class="qr-img" src="${qrDataUrl}" alt="QR Code" width="280" height="280">
+    <div class="qr-data">${linkToken.qrCodeData}</div>
+    <p style="margin-top: 12px; margin-bottom: 0;">Expires in 5 minutes</p>
+    <a class="back" href="/console?session=${sessionId}">&larr; Back to Console</a>
+  </div>
+</body>
+</html>`);
 });
 
 /**
