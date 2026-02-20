@@ -1,14 +1,16 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { env } from '../config/env.js';
 import { getAuthorizationUrl, exchangeCodeForTokens } from '../services/auth.service.js';
+import { sessions } from '../server/sessions.js';
 import { logger } from '../utils/logger.js';
 
 export const authRouter = Router();
 
 // Store pending auth states (in production, use Redis)
-const pendingStates = new Map<string, { expiresAt: number }>();
+export const pendingStates = new Map<string, { expiresAt: number; source?: string }>();
 
 // Clean up expired states periodically
 setInterval(() => {
@@ -51,27 +53,28 @@ authRouter.get('/google/callback', async (req, res) => {
     return res.redirect('/auth/error?message=invalid_state');
   }
 
-  // Remove used state
+  const stateData = pendingStates.get(state)!;
   pendingStates.delete(state);
 
   try {
-    const { user, tokens } = await exchangeCodeForTokens(code);
-
-    // Create session token
-    const sessionToken = jwt.sign(
-      {
-        userId: user.id,
-        email: user.email,
-      },
-      env.JWT_SECRET,
-      { expiresIn: '1h' }
-    );
+    const { user } = await exchangeCodeForTokens(code);
 
     logger.info({ userId: user.id }, 'User authenticated');
 
-    // In a real app, set cookie or redirect with token
-    // For now, redirect with token in query (not ideal for production)
-    res.redirect(`/auth/success?token=${sessionToken}`);
+    if (stateData.source === 'console') {
+      // Console login: create session and redirect to console
+      const sessionId = crypto.randomBytes(16).toString('hex');
+      sessions.set(sessionId, { userId: user.id, email: user.email, name: user.displayName });
+      res.redirect(`/console?session=${sessionId}`);
+    } else {
+      // API login: return JWT
+      const sessionToken = jwt.sign(
+        { userId: user.id, email: user.email },
+        env.JWT_SECRET,
+        { expiresIn: '1h' }
+      );
+      res.redirect(`/auth/success?token=${sessionToken}`);
+    }
   } catch (err) {
     logger.error({ error: err }, 'OAuth callback error');
     res.redirect('/auth/error?message=auth_failed');

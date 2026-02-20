@@ -13,6 +13,7 @@ import {
   fetchToolsFromEndpoint,
 } from '../services/mcp-registry.service.js';
 import { sessions } from '../server/sessions.js';
+import { pendingStates } from './auth.js';
 
 export const consoleRouter = Router();
 
@@ -436,7 +437,9 @@ consoleRouter.get('/auth/google', (_req: Request, res: Response) => {
   const { v4: uuidv4 } = require('uuid');
   const state = uuidv4();
 
-  // Store state for verification
+  // Store state with console source marker so callback creates a session
+  pendingStates.set(state, { expiresAt: Date.now() + 10 * 60 * 1000, source: 'console' });
+
   const { getAuthorizationUrl } = require('../services/auth.service.js');
   const url = getAuthorizationUrl(state);
 
