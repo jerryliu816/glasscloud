@@ -1,0 +1,144 @@
+# Redirect all HTTP traffic to HTTPS www
+server {
+
+    if ($host = glasscloud.jerryliu.net) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    server_name glasscloud.jerryliu.net;
+    return 301 https://glasscloud.jerryliu.net$request_uri;
+}
+
+# Main HTTPS server for www.glasscloud.jerryliu.net
+server {
+    listen 443 ssl;
+    server_name glasscloud.jerryliu.net;
+    #ssl_certificate /etc/letsencrypt/live/glasscloud.jerryliu.net/fullchain.pem; # managed by Certbot
+    #ssl_certificate_key /etc/letsencrypt/live/glasscloud.jerryliu.net/privkey.pem; # managed by Certbot
+    #include /etc/letsencrypt/options-ssl-nginx.conf;
+    #ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Drop common WordPress and PHP scan paths
+    location ~* ^/(wp-admin|wp-content|wp-includes|wp-login\.php|xmlrpc\.php|\.well-known|wp-.*\.php|.*\.php7|.*\.bak|.*\.sql|.*\.ini|.*\.log|.*\.sh)$ {
+        return 444;
+    }
+
+    # Drop known malicious file names
+    location ~* ^/(about|cloud|xmrlpc|repeater|mail|shell|makeasmtp|bypass|install|config|db|log|radio|moon|alfa.*|chosen|inputs|adminfuns|classsmtps|edit|index|ws|updates|403|bak|css|ini|simple)\.php7?$ {
+        return 444;
+    }
+
+    # Optional: block bad User-Agents
+#`j    if ($http_user_agent ~* (curl|python|libwww|nmap|nikto|wget|scan)) {
+#        return 403;
+#    }
+
+    # Rate limiting - removed server-wide rate limiting
+    # Individual locations now control their own rate limiting
+
+    # Proxy rules
+    location ~ ^/(iep|lcap)/ {
+        proxy_pass http://127.0.0.1:8500;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection '';
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    location /business-scenario/ {
+        limit_req zone=bot_limit burst=10 nodelay;
+        proxy_pass http://127.0.0.1:8500/;
+        proxy_http_version 1.1;
+        proxy_pass_request_headers on;
+#        proxy_set_header Authorization $http_authorization;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection '';
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # Static assets - no rate limiting for performance
+    location /_next/ {
+        proxy_pass http://127.0.0.1:8500;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # Let images go through without rate limiting
+    location ~* \.(png|jpg|jpeg|gif|svg|ico|webp)$ {
+        proxy_pass http://127.0.0.1:8500;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # Auth endpoints — pass everything through cleanly
+    location ~ ^/api/auth/ {
+        proxy_pass http://127.0.0.1:8500;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass_request_headers on;
+        proxy_set_header Cookie $http_cookie;
+        proxy_set_header Authorization $http_authorization;
+    }
+
+    # API routes - no rate limiting for app functionality
+    location ~ ^/api/ {
+        proxy_pass http://127.0.0.1:8500;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass_request_headers on;
+        proxy_set_header Cookie $http_cookie;
+        proxy_set_header Authorization $http_authorization;
+    }
+
+    location / {
+        limit_req zone=bot_limit burst=15 nodelay;
+        proxy_pass http://127.0.0.1:8500/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # Block generic PHP file probes like /bbs/showTag.php
+    location ~* \.php$ {
+        return 444;
+    }
+
+    # --- Logging (optional) ---
+    access_log /var/log/nginx/glasscloud.access.log;
+    error_log  /var/log/nginx/glasscloud.error.log;
+
+
+
+
+    #ssl_certificate /etc/letsencrypt/live/glasscloud.jerryliu.net/fullchain.pem; # managed by Certbot
+    #ssl_certificate_key /etc/letsencrypt/live/glasscloud.jerryliu.net/privkey.pem; # managed by Certbot
+
+    ssl_certificate /etc/letsencrypt/live/glasscloud.jerryliu.net/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/glasscloud.jerryliu.net/privkey.pem; # managed by Certbot
+}
